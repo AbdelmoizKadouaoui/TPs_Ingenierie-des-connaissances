@@ -1,0 +1,87 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PARTIE 2 : Interaction avec l'utilisateur (étudiant B)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- dynamic memo/2.
+% memo(Symptome, oui/non).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 1. Demande à l'utilisateur
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% demander_symptome(+Symptome, -Reponse)
+% Reponse = oui | non
+demander_symptome(Sympt, Rep) :-
+    format("Présentez-vous le symptôme suivant : ~w ? (o/n) : ", [Sympt]),
+    read(Brut),
+    ( (Brut == o ; Brut == 'o') ->
+        Rep = oui
+    ; (Brut == n ; Brut == 'n') ->
+        Rep = non
+    ; writeln("Entrée invalide, merci de répondre par o. ou n."),
+      demander_symptome(Sympt, Rep)
+    ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 2. a_le_symptome/1
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% a_le_symptome(+Symptome)
+% Utilise d'abord ce qui est mémorisé, sinon interroge l'utilisateur.
+a_le_symptome(S) :-
+    memo(S, oui), !.
+
+a_le_symptome(S) :-
+    memo(S, non), !, fail.
+
+a_le_symptome(S) :-
+    % pas encore en mémoire
+    demander_symptome(S, Rep),
+    asserta(memo(S, Rep)),
+    Rep == oui.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 3. Règles maladies (version interactive)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+pathologie(grippe) :-
+    a_le_symptome(fievre),
+    a_le_symptome(fatigue),
+    a_le_symptome(toux).
+
+pathologie(angine) :-
+    a_le_symptome(mal_gorge),
+    a_le_symptome(fievre).
+
+pathologie(covid) :-
+    a_le_symptome(fievre),
+    a_le_symptome(toux),
+    a_le_symptome(fatigue).
+
+pathologie(allergie) :-
+    a_le_symptome(eternuements),
+    a_le_symptome(nez_qui_coule),
+    \+ a_le_symptome(fievre).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 4. Liste des pathologies possibles
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+pathologies_possibles(Liste) :-
+    findall(M, pathologie(M), Liste).
+
+afficher_liste([]) :-
+    writeln("Aucun diagnostic n'a pu être établi.").
+
+afficher_liste(L) :-
+    writeln("Maladies envisageables :"),
+    writeln(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 5. Point d'entrée Partie 2
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+consultation :-
+    retractall(memo(_, _)),
+    pathologies_possibles(L),
+    afficher_liste(L).
