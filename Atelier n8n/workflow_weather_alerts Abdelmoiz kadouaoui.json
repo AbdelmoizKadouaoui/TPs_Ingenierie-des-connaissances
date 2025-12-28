@@ -1,0 +1,388 @@
+{
+  "name": "ETL Cozy Weather Ops Monitor (Forecast + Air) — Multi-Cities",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b1c6e2e8-5a33-4d31-9a8a-5b6a8c6c2b21",
+      "name": "Start (Manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-860, -20]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n  Seed des villes (5 grandes villes européennes)\n*/\nconst cities = [\n  { city: 'Paris', lat: 48.8566, lon: 2.3522 },\n  { city: 'Berlin', lat: 52.5200, lon: 13.4050 },\n  { city: 'Madrid', lat: 40.4168, lon: -3.7038 },\n  { city: 'Rome', lat: 41.9028, lon: 12.4964 },\n  { city: 'Amsterdam', lat: 52.3676, lon: 4.9041 },\n];\n\nreturn cities.map(c => ({ json: c }));\n"
+      },
+      "id": "9c46fb1e-9d11-4d2d-8b8b-52d40b6f1c58",
+      "name": "Seed Cities",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-650, -20]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.open-meteo.com/v1/forecast?latitude={{$json.lat}}&longitude={{$json.lon}}&current=temperature_2m,wind_speed_10m,precipitation&timezone=auto",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "8c2a12dd-0a20-4d2c-b3f8-1f2a7b39b3d7",
+      "name": "Fetch Weather (Open-Meteo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-420, -20]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/*\n  Normalize Weather\n  - Conserve city + coords, et met la météo dans weather{}\n  - Robuste si le HTTP écrase les champs\n*/\nconst resp = $json;\nconst incoming = $input.item.json || {};\n\nconst city = resp.city ?? incoming.city ?? null;\nconst lat = resp.lat ?? incoming.lat ?? null;\nconst lon = resp.lon ?? incoming.lon ?? null;\n\nconst weather = {\n  temperature_c: resp?.current?.temperature_2m ?? null,\n  wind_kmh: resp?.current?.wind_speed_10m ?? null,\n  precipitation_mm: resp?.current?.precipitation ?? null,\n  time: resp?.current?.time ?? null,\n};\n\nreturn {\n  json: {\n    city,\n    lat,\n    lon,\n    weather\n  }\n};\n"
+      },
+      "id": "b9e4ad48-145f-4cda-a7ce-34a6f1c2b8d9",
+      "name": "Normalize Weather",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, -20]
+    },
+    {
+      "parameters": {
+        "url": "=https://air-quality-api.open-meteo.com/v1/air-quality?latitude={{$json.lat}}&longitude={{$json.lon}}&current=european_aqi&timezone=auto",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "6ffb8e0f-1c9b-4c76-b8d4-63a64f0db4c0",
+      "name": "Fetch Air (Open-Meteo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, -20]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/*\n  Normalize Air\n  - Ajoute air{} en conservant la base (weather + city)\n*/\nconst base = $item(0, 'Normalize Weather').json;\nconst resp = $json;\n\nconst air = {\n  european_aqi: resp?.current?.european_aqi ?? null,\n  time: resp?.current?.time ?? null,\n};\n\nreturn {\n  json: {\n    ...base,\n    air\n  }\n};\n"
+      },
+      "id": "e7cbb1f7-d0f7-4c5d-a6a7-52a9cb0a2d3f",
+      "name": "Normalize Air",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [270, -20]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/*\n  Risk Score (0-100) conforme énoncé\n\n  Facteurs / Poids:\n  - Température extrême: 30%\n    Si <0°C ou >35°C => 100\n    Sinon proportionnel (zone confort 10..25 => 0, interpolation)\n  - Vent: 25% => min(wind, 100)\n  - Pluie: 25% => si >10mm => 100 sinon *10\n  - AQI: 20% => european_aqi\n\n  Niveaux:\n  0-30 VERT | 31-60 JAUNE | 61-80 ORANGE | 81-100 ROUGE\n*/\n\n// Récupération fiable des items de la chaîne\nconst cityItem = ($items('Seed Cities') || [])[ $itemIndex ]?.json;\nconst meteoItem = ($items('Fetch Weather (Open-Meteo)') || [])[ $itemIndex ]?.json;\nconst airItem = ($items('Fetch Air (Open-Meteo)') || [])[ $itemIndex ]?.json;\n\nconst city = cityItem || $json;\nconst meteo = meteoItem || $json;\nconst air = airItem || $json;\n\nconst name = city.city ?? null;\nconst lat = city.lat ?? null;\nconst lon = city.lon ?? null;\n\nconst Traw = Number(meteo?.current?.temperature_2m);\nconst Wraw = Number(meteo?.current?.wind_speed_10m);\nconst Rraw = Number(meteo?.current?.precipitation);\nconst Araw = Number(air?.current?.european_aqi);\n\nconst T = Number.isFinite(Traw) ? Traw : 0;\nconst W = Number.isFinite(Wraw) ? Wraw : 0;\nconst R = Number.isFinite(Rraw) ? Rraw : 0;\nconst A = Number.isFinite(Araw) ? Araw : 0;\n\n// Temp score\nlet temp_score;\nif (T < 0 || T > 35) {\n  temp_score = 100;\n} else {\n  if (T >= 10 && T <= 25) temp_score = 0;\n  else if (T < 10) temp_score = Math.min(99, ((10 - T) / 10) * 99);\n  else temp_score = Math.min(99, ((T - 25) / 10) * 99);\n}\n\nconst wind_score = Math.min(Math.max(W, 0), 100);\n\nlet rain_score;\nif (R > 10) rain_score = 100;\nelse rain_score = Math.min(Math.max(R * 10, 0), 100);\n\nconst aqi_score = Math.min(Math.max(A, 0), 100);\n\nconst score = Math.round(\n  (temp_score * 0.30) +\n  (wind_score * 0.25) +\n  (rain_score * 0.25) +\n  (aqi_score  * 0.20)\n);\n\nlet level, badge, action;\nif (score <= 30) {\n  level = 'VERT'; badge = '🟢'; action = 'Opérations normales';\n} else if (score <= 60) {\n  level = 'JAUNE'; badge = '🟡'; action = 'Surveillance renforcée';\n} else if (score <= 80) {\n  level = 'ORANGE'; badge = '🟠'; action = 'Mesures préventives';\n} else {\n  level = 'ROUGE'; badge = '🔴'; action = 'Alerte critique + Notification webhook';\n}\n\nreturn {\n  json: {\n    city: name,\n    lat,\n    lon,\n    temperature_c: T,\n    wind_kmh: W,\n    precipitation_mm: R,\n    air_aqi: A,\n    risk_score: score,\n    alert_level: level,\n    badge,\n    required_action: action,\n    timestamp: new Date().toISOString(),\n    scoring: {\n      temp_score: Math.round(temp_score),\n      wind_score: Math.round(wind_score),\n      rain_score: Math.round(rain_score),\n      aqi_score: Math.round(aqi_score)\n    },\n    sources: {\n      weather: 'https://api.open-meteo.com/v1/forecast',\n      air: 'https://air-quality-api.open-meteo.com/v1/air-quality'\n    }\n  }\n};\n"
+      },
+      "id": "2b4b5c76-bc1f-4d86-9d0b-5a7b9b7f4b2a",
+      "name": "Compute Risk + Level",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, -20]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.alert_level}}",
+                    "rightValue": "ROUGE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1a9b6b80-5e60-4b66-9b6f-7c7d8d1b3a10"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "allMatchingOutputs": false
+        }
+      },
+      "id": "c1a4b5de-4cf3-4e8a-9f6d-2d2f7c3e5a11",
+      "name": "Route: Critical Only",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [750, -20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/c9f53ca5-9b4c-4656-a187-3c6748d4adb0",
+        "sendBody": true,
+        "jsonBody": true,
+        "bodyParametersJson": "={\n  \"city\": $json.city,\n  \"alert_level\": $json.alert_level,\n  \"risk_score\": $json.risk_score,\n  \"temperature_c\": $json.temperature_c,\n  \"wind_kmh\": $json.wind_kmh,\n  \"precipitation_mm\": $json.precipitation_mm,\n  \"european_aqi\": $json.air_aqi,\n  \"timestamp\": $json.timestamp\n}",
+        "options": {}
+      },
+      "id": "6a6f1c23-7b6d-4f2d-9a6e-28e2c8d4f0aa",
+      "name": "Webhook: Critical Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [1010, -120]
+    },
+    {
+      "parameters": {},
+      "id": "7d9f3b21-6b1a-4eaf-9a2b-3f3a2d9d1c20",
+      "name": "Pass Through (Critical)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1240, -120]
+    },
+    {
+      "parameters": {},
+      "id": "0e6a2d45-0d7f-4a7f-b911-2a4df8b8e3a1",
+      "name": "Pass Through (Non-Critical)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1010, 90]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "3c2f4a63-5a43-4f6a-8d2e-8d2a9a9b2b33",
+      "name": "Merge Back (All Cities)",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1460, -20]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "d2f9b3ad-8b5a-4f83-9f9a-1c5d6f7a8b90",
+      "name": "Aggregate Set (5 Cities)",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1680, -20]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/*\n  LIVRABLE 1 — JSON complet (fichier)\n*/\nconst allItems = $input.all();\n\nconst data = allItems.flatMap(item => {\n  const json = item.json;\n  if (json && Array.isArray(json.data)) return json.data; // cas Aggregate\n  return [json];\n});\n\nconst stats = {\n  critical: data.filter(v => v.alert_level === 'ROUGE').length,\n  high: data.filter(v => v.alert_level === 'ORANGE').length,\n  medium: data.filter(v => v.alert_level === 'JAUNE').length,\n  low: data.filter(v => v.alert_level === 'VERT').length,\n  avg_risk: data.length ? Math.round(data.reduce((sum, v) => sum + (v.risk_score || 0), 0) / data.length) : 0\n};\n\nconst report = {\n  generated_at: new Date().toISOString(),\n  cities_count: data.length,\n  cities: data,\n  statistics: stats\n};\n\nreturn [{\n  json: report,\n  binary: {\n    data: {\n      data: Buffer.from(JSON.stringify(report, null, 2), 'utf-8').toString('base64'),\n      mimeType: 'application/json',\n      fileName: 'ops-weather-air-report.json'\n    }\n  }\n}];\n"
+      },
+      "id": "ab4e9a3e-bc7f-47e1-9d66-2c9d9c2a1b10",
+      "name": "Build JSON File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, -220]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/*\n  LIVRABLE 4 — CSV synthèse (fichier)\n*/\nconst items = $input.item.json?.data || $input.all().map(i => i.json);\nconst data = Array.isArray(items) ? items : ($json.data || []);\n\nconst header = ['City','Latitude','Longitude','RiskScore','AlertLevel','TempC','WindKmh','RainMm','AQI','Action','Timestamp'];\nconst lines = [header.join(',')];\n\nfor (const v of data) {\n  const action = (String(v.required_action || '')).replace(/\"/g,'\"\"');\n  const row = [\n    v.city,\n    v.lat,\n    v.lon,\n    v.risk_score,\n    v.alert_level,\n    v.temperature_c,\n    v.wind_kmh,\n    v.precipitation_mm,\n    v.air_aqi,\n    `\"${action}\"`,\n    v.timestamp\n  ];\n  lines.push(row.join(','));\n}\n\nconst csv = lines.join('\\n');\n\nreturn [{\n  json: { ok: true, type: 'csv', rows: data.length },\n  binary: {\n    data: {\n      data: Buffer.from(csv, 'utf-8').toString('base64'),\n      mimeType: 'text/csv',\n      fileName: 'ops-weather-air-summary.csv'\n    }\n  }\n}];\n"
+      },
+      "id": "c7b2a8e3-1e0b-4d46-b9f4-8e9b1a2c3d4e",
+      "name": "Build CSV File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, -20]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/*\n  LIVRABLE 2 — HTML Dashboard (cozy / simple)\n  - Design refait totalement : fond clair, carte, tableau, badges minimalistes\n*/\n\nconst allItems = $input.all();\nconst data = allItems.flatMap(item => {\n  const json = item.json;\n  if (json && Array.isArray(json.data)) return json.data;\n  return [json];\n});\n\nconst now = new Date();\nconst nowFR = now.toLocaleString('fr-FR');\n\nconst stats = {\n  rouge: data.filter(v => v.alert_level === 'ROUGE').length,\n  orange: data.filter(v => v.alert_level === 'ORANGE').length,\n  jaune: data.filter(v => v.alert_level === 'JAUNE').length,\n  vert: data.filter(v => v.alert_level === 'VERT').length,\n  avg: data.length ? Math.round(data.reduce((s, v) => s + (v.risk_score || 0), 0) / data.length) : 0\n};\n\nfunction esc(s){\n  return String(s ?? '').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\n}\n\nfunction fmt(n){\n  if (n === null || n === undefined || Number.isNaN(Number(n))) return '—';\n  return String(n);\n}\n\nfunction badge(level){\n  // palette cozy\n  if (level === 'ROUGE') return { bg:'#fee2e2', fg:'#991b1b', dot:'#ef4444', label:'ROUGE' };\n  if (level === 'ORANGE') return { bg:'#ffedd5', fg:'#9a3412', dot:'#f97316', label:'ORANGE' };\n  if (level === 'JAUNE') return { bg:'#fef9c3', fg:'#854d0e', dot:'#eab308', label:'JAUNE' };\n  return { bg:'#dcfce7', fg:'#166534', dot:'#22c55e', label:'VERT' };\n}\n\nconst sorted = [...data].sort((a,b) => (b.risk_score||0) - (a.risk_score||0));\n\nconst rows = sorted.map(v => {\n  const b = badge(v.alert_level);\n  const bar = Math.max(0, Math.min(100, Number(v.risk_score || 0)));\n  return `\n    <tr>\n      <td class=\"city\">\n        <div class=\"city-name\">${esc(v.city)}</div>\n        <div class=\"city-sub\">${fmt(v.lat)} · ${fmt(v.lon)}</div>\n      </td>\n      <td>\n        <span class=\"pill\" style=\"background:${b.bg}; color:${b.fg};\">\n          <span class=\"dot\" style=\"background:${b.dot}\"></span>${b.label}\n        </span>\n      </td>\n      <td class=\"num\">\n        <div class=\"score-wrap\">\n          <div class=\"score\">${bar}</div>\n          <div class=\"bar\"><div class=\"fill\" style=\"width:${bar}%\"></div></div>\n        </div>\n      </td>\n      <td class=\"num\">${fmt(v.temperature_c)}°C</td>\n      <td class=\"num\">${fmt(v.wind_kmh)}</td>\n      <td class=\"num\">${fmt(v.precipitation_mm)}</td>\n      <td class=\"num\">${fmt(v.air_aqi)}</td>\n      <td class=\"action\">${esc(v.required_action || '—')}</td>\n    </tr>\n  `;\n}).join('');\n\nconst html = `<!doctype html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Ops Monitor — Météo & Air</title>\n  <style>\n    :root{\n      --bg:#faf7f2;\n      --card:#ffffff;\n      --ink:#1f2937;\n      --muted:#6b7280;\n      --line:#e5e7eb;\n      --shadow: 0 10px 30px rgba(17,24,39,.08);\n      --radius: 18px;\n    }\n    *{box-sizing:border-box}\n    body{\n      margin:0;\n      background: var(--bg);\n      color: var(--ink);\n      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, \"Noto Sans\";\n      padding: 28px 16px 40px;\n    }\n    .wrap{max-width:1100px;margin:0 auto;}\n\n    .header{\n      display:flex;\n      gap:14px;\n      justify-content:space-between;\n      align-items:flex-end;\n      margin-bottom: 16px;\n    }\n    .title h1{margin:0;font-size:22px;letter-spacing:.2px}\n    .title .meta{margin-top:6px;color:var(--muted);font-size:13px}\n\n    .kpis{\n      display:grid;\n      grid-template-columns: repeat(5, minmax(0, 1fr));\n      gap:10px;\n      margin: 14px 0 14px;\n    }\n    .kpi{\n      background: var(--card);\n      border: 1px solid var(--line);\n      border-radius: var(--radius);\n      box-shadow: var(--shadow);\n      padding: 12px;\n    }\n    .kpi .k{color:var(--muted);font-size:12px}\n    .kpi .v{margin-top:6px;font-size:20px;font-weight:800}\n\n    .card{\n      background: var(--card);\n      border: 1px solid var(--line);\n      border-radius: var(--radius);\n      box-shadow: var(--shadow);\n      padding: 14px;\n    }\n\n    table{width:100%;border-collapse:separate;border-spacing:0;}\n    thead th{\n      text-align:left;\n      font-size:12px;\n      color:var(--muted);\n      font-weight:700;\n      padding: 10px 10px;\n      border-bottom: 1px solid var(--line);\n      position: sticky;\n      top: 0;\n      background: var(--card);\n    }\n    tbody td{\n      padding: 12px 10px;\n      border-bottom: 1px solid var(--line);\n      vertical-align: middle;\n      font-size: 14px;\n    }\n\n    .city-name{font-weight:800}\n    .city-sub{font-size:12px;color:var(--muted);margin-top:4px}\n\n    .pill{\n      display:inline-flex;\n      align-items:center;\n      gap:8px;\n      padding: 6px 10px;\n      border-radius: 999px;\n      font-weight:800;\n      font-size: 12px;\n      border: 1px solid rgba(0,0,0,.06);\n      white-space:nowrap;\n    }\n    .dot{width:10px;height:10px;border-radius:999px;display:inline-block}\n\n    .num{white-space:nowrap}\n\n    .score-wrap{min-width:170px}\n    .score{font-weight:900}\n    .bar{height:10px;background:#f3f4f6;border-radius:999px;overflow:hidden;margin-top:6px}\n    .fill{height:100%;background:#111827;border-radius:999px;opacity:.18}\n\n    .action{color:var(--ink)}\n\n    .footer{\n      margin-top: 12px;\n      color: var(--muted);\n      font-size: 12px;\n      text-align: center;\n    }\n\n    @media (max-width: 980px){\n      .kpis{grid-template-columns: repeat(2, minmax(0, 1fr));}\n      .score-wrap{min-width:130px}\n      thead{display:none}\n      table, tbody, tr, td{display:block;width:100%}\n      tbody td{border-bottom:none;padding:8px 10px}\n      tbody tr{border-bottom:1px solid var(--line);padding:10px 0}\n      td.city{padding-top:12px}\n      td::before{\n        content: attr(data-label);\n        display:block;\n        color: var(--muted);\n        font-size: 12px;\n        font-weight: 700;\n        margin-bottom: 4px;\n      }\n    }\n  </style>\n</head>\n<body>\n  <div class=\"wrap\">\n\n    <div class=\"header\">\n      <div class=\"title\">\n        <h1>Ops Monitor — Météo & Qualité de l’air</h1>\n        <div class=\"meta\">Généré le ${nowFR} • ${data.length} villes</div>\n      </div>\n      <div class=\"title\" style=\"text-align:right\">\n        <div class=\"meta\">Score = temp(30%) + vent(25%) + pluie(25%) + AQI(20%)</div>\n      </div>\n    </div>\n\n    <div class=\"kpis\">\n      <div class=\"kpi\"><div class=\"k\">Score moyen</div><div class=\"v\">${stats.avg}</div></div>\n      <div class=\"kpi\"><div class=\"k\">ROUGE</div><div class=\"v\">${stats.rouge}</div></div>\n      <div class=\"kpi\"><div class=\"k\">ORANGE</div><div class=\"v\">${stats.orange}</div></div>\n      <div class=\"kpi\"><div class=\"k\">JAUNE</div><div class=\"v\">${stats.jaune}</div></div>\n      <div class=\"kpi\"><div class=\"k\">VERT</div><div class=\"v\">${stats.vert}</div></div>\n    </div>\n\n    <div class=\"card\">\n      <table>\n        <thead>\n          <tr>\n            <th>Ville</th>\n            <th>Niveau</th>\n            <th>Risque</th>\n            <th>Temp</th>\n            <th>Vent</th>\n            <th>Pluie</th>\n            <th>AQI</th>\n            <th>Action</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${rows}\n        </tbody>\n      </table>\n    </div>\n\n    <div class=\"footer\">\n      Rapport consolidé — Open-Meteo Forecast + Open-Meteo Air Quality\n    </div>\n\n  </div>\n</body>\n</html>`;\n\nreturn [{\n  json: { ok: true, type: 'html', cities: data.length },\n  binary: {\n    data: {\n      data: Buffer.from(html, 'utf-8').toString('base64'),\n      mimeType: 'text/html; charset=utf-8',\n      fileName: 'ops-monitor-cozy.html'\n    }\n  }\n}];\n"
+      },
+      "id": "3f19b2d7-1b62-49b9-8b66-92a6f7b1c2d3",
+      "name": "Build HTML (Cozy)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 180]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start (Manual)": {
+      "main": [
+        [
+          {
+            "node": "Seed Cities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seed Cities": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weather (Open-Meteo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weather (Open-Meteo)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Weather": {
+      "main": [
+        [
+          {
+            "node": "Fetch Air (Open-Meteo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Air (Open-Meteo)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Air",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Air": {
+      "main": [
+        [
+          {
+            "node": "Compute Risk + Level",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Risk + Level": {
+      "main": [
+        [
+          {
+            "node": "Route: Critical Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Critical Only": {
+      "main": [
+        [
+          {
+            "node": "Webhook: Critical Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pass Through (Non-Critical)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: Critical Alert": {
+      "main": [
+        [
+          {
+            "node": "Pass Through (Critical)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Through (Critical)": {
+      "main": [
+        [
+          {
+            "node": "Merge Back (All Cities)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Through (Non-Critical)": {
+      "main": [
+        [
+          {
+            "node": "Merge Back (All Cities)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Back (All Cities)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Set (5 Cities)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Set (5 Cities)": {
+      "main": [
+        [
+          {
+            "node": "Build JSON File",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build CSV File",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build HTML (Cozy)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "00000000-0000-0000-0000-000000000002",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "OPS_COZY_WEATHER_AIR_MULTI_CITIES",
+  "tags": []
+}

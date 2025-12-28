@@ -1,0 +1,133 @@
+{
+  "generated_at": "2025-12-21T17:22:48.028Z",
+  "cities_count": 5,
+  "cities": [
+    {
+      "city": "Paris",
+      "lat": 48.8566,
+      "lon": 2.3522,
+      "temperature_c": 11.6,
+      "wind_kmh": 18.3,
+      "precipitation_mm": 0.6,
+      "air_aqi": 0,
+      "risk_score": 6,
+      "alert_level": "VERT",
+      "badge": "🟢",
+      "required_action": "Opérations normales",
+      "timestamp": "2025-12-21T17:22:48.012Z",
+      "scoring": {
+        "temp_score": 0,
+        "wind_score": 18,
+        "rain_score": 6,
+        "aqi_score": 0
+      },
+      "sources": {
+        "weather": "https://api.open-meteo.com/v1/forecast",
+        "air": "https://air-quality-api.open-meteo.com/v1/air-quality"
+      }
+    },
+    {
+      "city": "Berlin",
+      "lat": 52.52,
+      "lon": 13.405,
+      "temperature_c": 6.1,
+      "wind_kmh": 13.6,
+      "precipitation_mm": 0,
+      "air_aqi": 0,
+      "risk_score": 15,
+      "alert_level": "VERT",
+      "badge": "🟢",
+      "required_action": "Opérations normales",
+      "timestamp": "2025-12-21T17:22:48.013Z",
+      "scoring": {
+        "temp_score": 39,
+        "wind_score": 14,
+        "rain_score": 0,
+        "aqi_score": 0
+      },
+      "sources": {
+        "weather": "https://api.open-meteo.com/v1/forecast",
+        "air": "https://air-quality-api.open-meteo.com/v1/air-quality"
+      }
+    },
+    {
+      "city": "Madrid",
+      "lat": 40.4168,
+      "lon": -3.7038,
+      "temperature_c": 5,
+      "wind_kmh": 5.9,
+      "precipitation_mm": 0,
+      "air_aqi": 0,
+      "risk_score": 16,
+      "alert_level": "VERT",
+      "badge": "🟢",
+      "required_action": "Opérations normales",
+      "timestamp": "2025-12-21T17:22:48.013Z",
+      "scoring": {
+        "temp_score": 50,
+        "wind_score": 6,
+        "rain_score": 0,
+        "aqi_score": 0
+      },
+      "sources": {
+        "weather": "https://api.open-meteo.com/v1/forecast",
+        "air": "https://air-quality-api.open-meteo.com/v1/air-quality"
+      }
+    },
+    {
+      "city": "Rome",
+      "lat": 41.9028,
+      "lon": 12.4964,
+      "temperature_c": 11.6,
+      "wind_kmh": 3.3,
+      "precipitation_mm": 0,
+      "air_aqi": 0,
+      "risk_score": 1,
+      "alert_level": "VERT",
+      "badge": "🟢",
+      "required_action": "Opérations normales",
+      "timestamp": "2025-12-21T17:22:48.014Z",
+      "scoring": {
+        "temp_score": 0,
+        "wind_score": 3,
+        "rain_score": 0,
+        "aqi_score": 0
+      },
+      "sources": {
+        "weather": "https://api.open-meteo.com/v1/forecast",
+        "air": "https://air-quality-api.open-meteo.com/v1/air-quality"
+      }
+    },
+    {
+      "city": "Amsterdam",
+      "lat": 52.3676,
+      "lon": 4.9041,
+      "temperature_c": 8.4,
+      "wind_kmh": 15.8,
+      "precipitation_mm": 0,
+      "air_aqi": 0,
+      "risk_score": 9,
+      "alert_level": "VERT",
+      "badge": "🟢",
+      "required_action": "Opérations normales",
+      "timestamp": "2025-12-21T17:22:48.014Z",
+      "scoring": {
+        "temp_score": 16,
+        "wind_score": 16,
+        "rain_score": 0,
+        "aqi_score": 0
+      },
+      "sources": {
+        "weather": "https://api.open-meteo.com/v1/forecast",
+        "air": "https://air-quality-api.open-meteo.com/v1/air-quality"
+      }
+    }
+  ],
+  "statistics": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 5,
+    "avg_risk": 9
+  }
+}

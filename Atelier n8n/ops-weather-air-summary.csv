@@ -1,0 +1,6 @@
+City,Latitude,Longitude,RiskScore,AlertLevel,TempC,WindKmh,RainMm,AQI,Action,Timestamp
+Paris,48.8566,2.3522,6,VERT,11.6,18.3,0.6,0,"Opérations normales",2025-12-21T17:22:48.012Z
+Berlin,52.52,13.405,15,VERT,6.1,13.6,0,0,"Opérations normales",2025-12-21T17:22:48.013Z
+Madrid,40.4168,-3.7038,16,VERT,5,5.9,0,0,"Opérations normales",2025-12-21T17:22:48.013Z
+Rome,41.9028,12.4964,1,VERT,11.6,3.3,0,0,"Opérations normales",2025-12-21T17:22:48.014Z
+Amsterdam,52.3676,4.9041,9,VERT,8.4,15.8,0,0,"Opérations normales",2025-12-21T17:22:48.014Z
