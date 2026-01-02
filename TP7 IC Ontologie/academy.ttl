@@ -1,0 +1,93 @@
+@prefix ex:   <http://example.org/ontology/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+########################################
+# Ontology
+########################################
+
+ex: a owl:Ontology ;
+  rdfs:label "Courses / Homeworks / Teachers Ontology"@en .
+
+########################################
+# Classes
+########################################
+
+ex:Course a owl:Class ;
+  rdfs:label "Course"@en ;
+  # Courses are organized by teachers.
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty ex:organizedBy ;
+    owl:someValuesFrom ex:Teacher
+  ] .
+
+ex:LaboratoryCourse a owl:Class ;
+  rdfs:label "Laboratory course"@en ;
+  rdfs:subClassOf ex:Course .
+
+ex:Homework a owl:Class ;
+  rdfs:label "Homework"@en ;
+  # Homeworks are part of courses.
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty ex:partOf ;
+    owl:someValuesFrom ex:Course
+  ] .
+
+ex:Teacher a owl:Class ;
+  rdfs:label "Teacher"@en ;
+  # Teachers are either professors or assistants.
+  owl:equivalentClass [
+    a owl:Class ;
+    owl:unionOf ( ex:Professor ex:Assistant )
+  ] .
+
+ex:Professor a owl:Class ;
+  rdfs:label "Professor"@en ;
+  rdfs:subClassOf ex:Teacher ;
+  # Professors teach courses.
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty ex:teaches ;
+    owl:someValuesFrom ex:Course
+  ] .
+
+ex:Assistant a owl:Class ;
+  rdfs:label "Assistant"@en ;
+  rdfs:subClassOf ex:Teacher ;
+  # Assistants only teach laboratory courses.
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty ex:teaches ;
+    owl:allValuesFrom ex:LaboratoryCourse
+  ] .
+
+# Exclusive either/or (optional but consistent with "either ... or")
+ex:Professor owl:disjointWith ex:Assistant .
+
+########################################
+# Object properties
+########################################
+
+ex:partOf a owl:ObjectProperty ;
+  rdfs:label "part of"@en ;
+  rdfs:domain ex:Homework ;
+  rdfs:range  ex:Course .
+
+ex:hasHomework a owl:ObjectProperty ;
+  rdfs:label "has homework"@en ;
+  rdfs:domain ex:Course ;
+  rdfs:range  ex:Homework ;
+  owl:inverseOf ex:partOf .
+
+ex:organizedBy a owl:ObjectProperty ;
+  rdfs:label "organized by"@en ;
+  rdfs:domain ex:Course ;
+  rdfs:range  ex:Teacher .
+
+ex:teaches a owl:ObjectProperty ;
+  rdfs:label "teaches"@en ;
+  rdfs:domain ex:Teacher ;
+  rdfs:range  ex:Course .
